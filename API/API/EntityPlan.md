@@ -33,7 +33,6 @@
 ## Comment
 * commentId
 * commenterId
-* replyingTo - commentId? (do we need reply chains)
 * ticketId
 * text - str
 * createdAt - datetime
