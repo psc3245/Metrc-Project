@@ -4,7 +4,6 @@ using API.Repositories;
 using API.Service;
 using API.Users;
 using Moq;
-using Xunit;
 
 namespace API.Tests.UserTests;
 

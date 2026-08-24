@@ -2,7 +2,6 @@ using API.Data;
 using API.Repositories;
 using API.Users;
 using Microsoft.EntityFrameworkCore;
-using Xunit;
 
 namespace API.Tests.Repositories;
 

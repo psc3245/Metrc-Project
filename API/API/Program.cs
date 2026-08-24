@@ -45,6 +45,8 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
+builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddSingleton<ITokenService, TokenService>();
 
 // ---- JWT Auth ----
@@ -88,6 +90,7 @@ app.UseExceptionHandler(exceptionApp => exceptionApp.Run(async context =>
     {
         UserExistsException => (StatusCodes.Status409Conflict, feature.Error.Message),
         UserNotFoundException => (StatusCodes.Status404NotFound, feature.Error.Message),
+        ProjectNotFoundException => (StatusCodes.Status404NotFound, feature.Error.Message),
         BadLoginException => (StatusCodes.Status401Unauthorized, feature.Error.Message),
         _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred.")
     };
@@ -110,6 +113,5 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-
 
 app.Run();

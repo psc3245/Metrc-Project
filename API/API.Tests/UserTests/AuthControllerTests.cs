@@ -7,7 +7,6 @@ using API.Services;
 using API.Users;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
-using Xunit;
 
 namespace API.Tests.UserTests;
 
