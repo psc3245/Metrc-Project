@@ -3,6 +3,7 @@ using API.Projects;
 using API.Tickets;
 using API.Users;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace API.Data;
 
@@ -72,17 +73,27 @@ public class ApplicationDbContext : DbContext
             .WithMany(tag => tag.Tickets)
             .UsingEntity(j => j.ToTable("TicketTags"));
 
-        // Force every DateTime to UTC on read/write (Npgsql requires timestamptz consistency)
+        // ---- Force every DateTime to UTC on read/write (Npgsql requires timestamptz consistency) ----
+        // Two separate converters are required: EF Core's SetValueConverter requires the converter's
+        // model CLR type to exactly match the property's CLR type, so a single ValueConverter<DateTime, DateTime>
+        // cannot be applied to DateTime? properties (e.g. Project.Deadline, Ticket.Deadline) - doing so throws
+        // an InvalidOperationException at model-build time.
+        var utcConverter = new ValueConverter<DateTime, DateTime>(
+            v => v.Kind == DateTimeKind.Utc ? v : v.ToUniversalTime(),
+            v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
+
+        var nullableUtcConverter = new ValueConverter<DateTime?, DateTime?>(
+            v => v.HasValue ? (v.Value.Kind == DateTimeKind.Utc ? v.Value : v.Value.ToUniversalTime()) : v,
+            v => v.HasValue ? DateTime.SpecifyKind(v.Value, DateTimeKind.Utc) : v);
+
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
             foreach (var property in entityType.GetProperties())
             {
-                if (property.ClrType == typeof(DateTime) || property.ClrType == typeof(DateTime?))
-                {
-                    property.SetValueConverter(new Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTime, DateTime>(
-                        v => v.Kind == DateTimeKind.Utc ? v : v.ToUniversalTime(),
-                        v => DateTime.SpecifyKind(v, DateTimeKind.Utc)));
-                }
+                if (property.ClrType == typeof(DateTime))
+                    property.SetValueConverter(utcConverter);
+                else if (property.ClrType == typeof(DateTime?))
+                    property.SetValueConverter(nullableUtcConverter);
             }
         }
     }
