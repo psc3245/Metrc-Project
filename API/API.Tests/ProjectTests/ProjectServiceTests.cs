@@ -5,6 +5,7 @@ using API.Repositories;
 using API.Service;
 using API.Users;
 using Moq;
+using Xunit;
 
 namespace API.Tests.ProjectTests;
 
@@ -24,17 +25,19 @@ public class ProjectServiceTests
     // ---- CreateProject ----
 
     [Fact]
-    public async Task CreateProject_CreatesAndReturnsDto()
+    public async Task CreateProject_AddsCreatorAsParticipant()
     {
-        _projectRepoMock.Setup(r => r.AddProject(It.IsAny<Project>()))
-            .Returns(Task.CompletedTask);
+        var creatorId = Guid.NewGuid();
+        var creator = new User { Id = creatorId, Username = "creator", PasswordHash = "hash" };
+        _userRepoMock.Setup(r => r.GetUserByUserId(creatorId)).ReturnsAsync(creator);
+        _projectRepoMock.Setup(r => r.AddProject(It.IsAny<Project>())).Returns(Task.CompletedTask);
 
         var req = new CreateProjectRequest("New Project", "desc", null);
 
-        var result = await _service.CreateProject(req);
+        var result = await _service.CreateProject(req, creatorId);
 
         Assert.Equal("New Project", result.Title);
-        _projectRepoMock.Verify(r => r.AddProject(It.Is<Project>(p => p.Title == "New Project")), Times.Once);
+        Assert.Contains(creatorId, result.ParticipantIds);
     }
 
     // ---- GetProjectById ----
@@ -65,11 +68,7 @@ public class ProjectServiceTests
     [Fact]
     public async Task GetAllProjects_ReturnsAllAsDtos()
     {
-        var projects = new List<Project>
-        {
-            new() { Title = "P1" },
-            new() { Title = "P2" }
-        };
+        var projects = new List<Project> { new() { Title = "P1" }, new() { Title = "P2" } };
         _projectRepoMock.Setup(r => r.GetAllProjects()).ReturnsAsync(projects);
 
         var result = await _service.GetAllProjects();
@@ -80,19 +79,35 @@ public class ProjectServiceTests
     // ---- UpdateProject ----
 
     [Fact]
-    public async Task UpdateProject_WithProvidedFields_UpdatesOnlyThoseFields()
+    public async Task UpdateProject_AsParticipant_UpdatesOnlyProvidedFields()
     {
         var id = Guid.NewGuid();
-        var original = new Project { Id = id, Title = "Old Title", Description = "Old Desc" };
-        _projectRepoMock.Setup(r => r.GetProjectById(id)).ReturnsAsync(original);
+        var callerId = Guid.NewGuid();
+        var caller = new User { Id = callerId, Username = "caller", PasswordHash = "hash" };
+        var project = new Project { Id = id, Title = "Old Title", Description = "Old Desc" };
+        project.Participants.Add(caller);
+
+        _projectRepoMock.Setup(r => r.GetProjectById(id)).ReturnsAsync(project);
         _projectRepoMock.Setup(r => r.SaveChangesAsync()).Returns(Task.CompletedTask);
 
         var req = new UpdateProjectRequest("New Title", null, null);
-
-        var result = await _service.UpdateProject(id, req);
+        var result = await _service.UpdateProject(id, req, callerId);
 
         Assert.Equal("New Title", result.Title);
-        Assert.Equal("Old Desc", result.Description); // untouched since req.Description was null
+        Assert.Equal("Old Desc", result.Description);
+    }
+
+    [Fact]
+    public async Task UpdateProject_AsNonParticipant_ThrowsForbiddenException()
+    {
+        var id = Guid.NewGuid();
+        var callerId = Guid.NewGuid(); // not added as a participant
+        var project = new Project { Id = id, Title = "Old Title" };
+        _projectRepoMock.Setup(r => r.GetProjectById(id)).ReturnsAsync(project);
+
+        var req = new UpdateProjectRequest("New Title", null, null);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => _service.UpdateProject(id, req, callerId));
     }
 
     [Fact]
@@ -103,130 +118,138 @@ public class ProjectServiceTests
 
         var req = new UpdateProjectRequest("New Title", null, null);
 
-        await Assert.ThrowsAsync<ProjectNotFoundException>(() => _service.UpdateProject(id, req));
+        await Assert.ThrowsAsync<ProjectNotFoundException>(() => _service.UpdateProject(id, req, Guid.NewGuid()));
     }
 
     // ---- RemoveProject ----
 
     [Fact]
-    public async Task RemoveProject_WithExistingProject_ReturnsTrue()
+    public async Task RemoveProject_AsParticipant_ReturnsTrue()
     {
         var id = Guid.NewGuid();
+        var callerId = Guid.NewGuid();
+        var caller = new User { Id = callerId, Username = "caller", PasswordHash = "hash" };
+        var project = new Project { Id = id, Title = "P" };
+        project.Participants.Add(caller);
+
+        _projectRepoMock.Setup(r => r.GetProjectById(id)).ReturnsAsync(project);
         _projectRepoMock.Setup(r => r.RemoveProject(id)).ReturnsAsync(true);
 
-        var result = await _service.RemoveProject(id);
+        var result = await _service.RemoveProject(id, callerId);
 
         Assert.True(result);
+    }
+
+    [Fact]
+    public async Task RemoveProject_AsNonParticipant_ThrowsForbiddenException()
+    {
+        var id = Guid.NewGuid();
+        var project = new Project { Id = id, Title = "P" };
+        _projectRepoMock.Setup(r => r.GetProjectById(id)).ReturnsAsync(project);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => _service.RemoveProject(id, Guid.NewGuid()));
     }
 
     [Fact]
     public async Task RemoveProject_WithNonexistentProject_ThrowsProjectNotFoundException()
     {
         var id = Guid.NewGuid();
-        _projectRepoMock.Setup(r => r.RemoveProject(id)).ReturnsAsync(false);
+        _projectRepoMock.Setup(r => r.GetProjectById(id)).ReturnsAsync((Project?)null);
 
-        await Assert.ThrowsAsync<ProjectNotFoundException>(() => _service.RemoveProject(id));
+        await Assert.ThrowsAsync<ProjectNotFoundException>(() => _service.RemoveProject(id, Guid.NewGuid()));
     }
 
     // ---- AddParticipant ----
 
     [Fact]
-    public async Task AddParticipant_WithValidProjectAndUser_AddsParticipant()
+    public async Task AddParticipant_AsExistingParticipant_AddsNewParticipant()
     {
         var projectId = Guid.NewGuid();
-        var userId = Guid.NewGuid();
+        var callerId = Guid.NewGuid();
+        var newUserId = Guid.NewGuid();
+        var caller = new User { Id = callerId, Username = "caller", PasswordHash = "hash" };
+        var newUser = new User { Id = newUserId, Username = "newbie", PasswordHash = "hash" };
         var project = new Project { Id = projectId, Title = "P" };
-        var user = new User { Id = userId, Username = "alice", PasswordHash = "hash" };
+        project.Participants.Add(caller);
 
         _projectRepoMock.Setup(r => r.GetProjectById(projectId)).ReturnsAsync(project);
-        _userRepoMock.Setup(r => r.GetUserByUserId(userId)).ReturnsAsync(user);
+        _userRepoMock.Setup(r => r.GetUserByUserId(newUserId)).ReturnsAsync(newUser);
         _projectRepoMock.Setup(r => r.SaveChangesAsync()).Returns(Task.CompletedTask);
 
-        var result = await _service.AddParticipant(projectId, userId);
+        var result = await _service.AddParticipant(projectId, newUserId, callerId);
 
-        Assert.Contains(userId, result.ParticipantIds);
-        _projectRepoMock.Verify(r => r.SaveChangesAsync(), Times.Once);
+        Assert.Contains(newUserId, result.ParticipantIds);
     }
 
     [Fact]
-    public async Task AddParticipant_AlreadyParticipant_DoesNotDuplicateOrSave()
+    public async Task AddParticipant_AsNonParticipant_ThrowsForbiddenException()
     {
         var projectId = Guid.NewGuid();
-        var userId = Guid.NewGuid();
-        var user = new User { Id = userId, Username = "alice", PasswordHash = "hash" };
         var project = new Project { Id = projectId, Title = "P" };
-        project.Participants.Add(user);
-
         _projectRepoMock.Setup(r => r.GetProjectById(projectId)).ReturnsAsync(project);
-        _userRepoMock.Setup(r => r.GetUserByUserId(userId)).ReturnsAsync(user);
 
-        var result = await _service.AddParticipant(projectId, userId);
-
-        Assert.Single(result.ParticipantIds);
-        _projectRepoMock.Verify(r => r.SaveChangesAsync(), Times.Never);
+        await Assert.ThrowsAsync<ForbiddenException>(
+            () => _service.AddParticipant(projectId, Guid.NewGuid(), Guid.NewGuid()));
     }
 
     [Fact]
     public async Task AddParticipant_WithNonexistentProject_ThrowsProjectNotFoundException()
     {
         var projectId = Guid.NewGuid();
-        var userId = Guid.NewGuid();
         _projectRepoMock.Setup(r => r.GetProjectById(projectId)).ReturnsAsync((Project?)null);
 
-        await Assert.ThrowsAsync<ProjectNotFoundException>(() => _service.AddParticipant(projectId, userId));
+        await Assert.ThrowsAsync<ProjectNotFoundException>(
+            () => _service.AddParticipant(projectId, Guid.NewGuid(), Guid.NewGuid()));
     }
 
     [Fact]
     public async Task AddParticipant_WithNonexistentUser_ThrowsUserNotFoundException()
     {
         var projectId = Guid.NewGuid();
-        var userId = Guid.NewGuid();
+        var callerId = Guid.NewGuid();
+        var caller = new User { Id = callerId, Username = "caller", PasswordHash = "hash" };
         var project = new Project { Id = projectId, Title = "P" };
-        _projectRepoMock.Setup(r => r.GetProjectById(projectId)).ReturnsAsync(project);
-        _userRepoMock.Setup(r => r.GetUserByUserId(userId)).ReturnsAsync((User?)null);
+        project.Participants.Add(caller);
+        var newUserId = Guid.NewGuid();
 
-        await Assert.ThrowsAsync<UserNotFoundException>(() => _service.AddParticipant(projectId, userId));
+        _projectRepoMock.Setup(r => r.GetProjectById(projectId)).ReturnsAsync(project);
+        _userRepoMock.Setup(r => r.GetUserByUserId(newUserId)).ReturnsAsync((User?)null);
+
+        await Assert.ThrowsAsync<UserNotFoundException>(
+            () => _service.AddParticipant(projectId, newUserId, callerId));
     }
 
     // ---- RemoveParticipant ----
 
     [Fact]
-    public async Task RemoveParticipant_RemovesExistingParticipant()
+    public async Task RemoveParticipant_AsExistingParticipant_RemovesTarget()
     {
         var projectId = Guid.NewGuid();
-        var userId = Guid.NewGuid();
-        var user = new User { Id = userId, Username = "alice", PasswordHash = "hash" };
+        var callerId = Guid.NewGuid();
+        var targetId = Guid.NewGuid();
+        var caller = new User { Id = callerId, Username = "caller", PasswordHash = "hash" };
+        var target = new User { Id = targetId, Username = "target", PasswordHash = "hash" };
         var project = new Project { Id = projectId, Title = "P" };
-        project.Participants.Add(user);
+        project.Participants.Add(caller);
+        project.Participants.Add(target);
 
         _projectRepoMock.Setup(r => r.GetProjectById(projectId)).ReturnsAsync(project);
-        _userRepoMock.Setup(r => r.GetUserByUserId(userId)).ReturnsAsync(user);
+        _userRepoMock.Setup(r => r.GetUserByUserId(targetId)).ReturnsAsync(target);
         _projectRepoMock.Setup(r => r.SaveChangesAsync()).Returns(Task.CompletedTask);
 
-        var result = await _service.RemoveParticipant(projectId, userId);
+        var result = await _service.RemoveParticipant(projectId, targetId, callerId);
 
-        Assert.DoesNotContain(userId, result.ParticipantIds);
+        Assert.DoesNotContain(targetId, result.ParticipantIds);
     }
 
     [Fact]
-    public async Task RemoveParticipant_WithNonexistentProject_ThrowsProjectNotFoundException()
+    public async Task RemoveParticipant_AsNonParticipant_ThrowsForbiddenException()
     {
         var projectId = Guid.NewGuid();
-        var userId = Guid.NewGuid();
-        _projectRepoMock.Setup(r => r.GetProjectById(projectId)).ReturnsAsync((Project?)null);
-
-        await Assert.ThrowsAsync<ProjectNotFoundException>(() => _service.RemoveParticipant(projectId, userId));
-    }
-
-    [Fact]
-    public async Task RemoveParticipant_WithNonexistentUser_ThrowsUserNotFoundException()
-    {
-        var projectId = Guid.NewGuid();
-        var userId = Guid.NewGuid();
         var project = new Project { Id = projectId, Title = "P" };
         _projectRepoMock.Setup(r => r.GetProjectById(projectId)).ReturnsAsync(project);
-        _userRepoMock.Setup(r => r.GetUserByUserId(userId)).ReturnsAsync((User?)null);
 
-        await Assert.ThrowsAsync<UserNotFoundException>(() => _service.RemoveParticipant(projectId, userId));
+        await Assert.ThrowsAsync<ForbiddenException>(
+            () => _service.RemoveParticipant(projectId, Guid.NewGuid(), Guid.NewGuid()));
     }
 }

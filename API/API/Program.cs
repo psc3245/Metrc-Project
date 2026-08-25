@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text;
+using System.Text.Json.Serialization;
 using API.Data;
 using API.Entities.Exceptions;
 using API.Repositories;
@@ -16,7 +17,14 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        // Enums are stored as strings in Postgres (see DbContext HasConversion<string>());
+        // this makes the JSON API consistent with that, accepting/returning "HIGH" /
+        // "IN_PROGRESS" instead of System.Text.Json's default integer representation.
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -47,6 +55,9 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
+builder.Services.AddScoped<ITicketRepository, TicketRepository>();
+builder.Services.AddScoped<ITagRepository, TagRepository>();
+builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddSingleton<ITokenService, TokenService>();
 
 // ---- JWT Auth ----
@@ -91,6 +102,8 @@ app.UseExceptionHandler(exceptionApp => exceptionApp.Run(async context =>
         UserExistsException => (StatusCodes.Status409Conflict, feature.Error.Message),
         UserNotFoundException => (StatusCodes.Status404NotFound, feature.Error.Message),
         ProjectNotFoundException => (StatusCodes.Status404NotFound, feature.Error.Message),
+        TicketNotFoundException => (StatusCodes.Status404NotFound, feature.Error.Message),
+        ForbiddenException => (StatusCodes.Status403Forbidden, feature.Error.Message),
         BadLoginException => (StatusCodes.Status401Unauthorized, feature.Error.Message),
         _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred.")
     };
@@ -115,3 +128,8 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+// Required for WebApplicationFactory<Program> in integration tests - top-level
+// statement Program classes are implicitly internal, so this makes it accessible
+// from the test project.
+public partial class Program { }

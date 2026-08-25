@@ -1,13 +1,15 @@
 using API.Entities.Exceptions;
 using API.Entities.HelperClasses;
 using API.Service;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class ProjectController : ControllerBase
+[Authorize]
+public class ProjectController : AuthenticatedControllerBase
 {
     private readonly IProjectService _service;
 
@@ -19,7 +21,8 @@ public class ProjectController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> CreateProject([FromBody] CreateProjectRequest req)
     {
-        var project = await _service.CreateProject(req);
+        var callerId = GetAuthenticatedUserId();
+        var project = await _service.CreateProject(req, callerId);
         return CreatedAtAction(nameof(GetProjectById), new { projectId = project.ProjectId }, project);
     }
 
@@ -48,12 +51,17 @@ public class ProjectController : ControllerBase
     {
         try
         {
-            var project = await _service.UpdateProject(projectId, req);
+            var callerId = GetAuthenticatedUserId();
+            var project = await _service.UpdateProject(projectId, req, callerId);
             return Ok(project);
         }
         catch (ProjectNotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
+        }
+        catch (ForbiddenException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { error = ex.Message });
         }
     }
 
@@ -62,12 +70,17 @@ public class ProjectController : ControllerBase
     {
         try
         {
-            await _service.RemoveProject(projectId);
+            var callerId = GetAuthenticatedUserId();
+            await _service.RemoveProject(projectId, callerId);
             return NoContent();
         }
         catch (ProjectNotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
+        }
+        catch (ForbiddenException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { error = ex.Message });
         }
     }
 
@@ -76,7 +89,8 @@ public class ProjectController : ControllerBase
     {
         try
         {
-            var project = await _service.AddParticipant(projectId, userId);
+            var callerId = GetAuthenticatedUserId();
+            var project = await _service.AddParticipant(projectId, userId, callerId);
             return Ok(project);
         }
         catch (ProjectNotFoundException ex)
@@ -86,6 +100,10 @@ public class ProjectController : ControllerBase
         catch (UserNotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
+        }
+        catch (ForbiddenException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { error = ex.Message });
         }
     }
 
@@ -94,7 +112,8 @@ public class ProjectController : ControllerBase
     {
         try
         {
-            var project = await _service.RemoveParticipant(projectId, userId);
+            var callerId = GetAuthenticatedUserId();
+            var project = await _service.RemoveParticipant(projectId, userId, callerId);
             return Ok(project);
         }
         catch (ProjectNotFoundException ex)
@@ -104,6 +123,10 @@ public class ProjectController : ControllerBase
         catch (UserNotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
+        }
+        catch (ForbiddenException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { error = ex.Message });
         }
     }
 }

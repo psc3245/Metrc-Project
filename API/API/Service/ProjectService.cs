@@ -8,13 +8,13 @@ namespace API.Service;
 
 public interface IProjectService
 {
-    Task<ProjectDto> CreateProject(CreateProjectRequest req);
+    Task<ProjectDto> CreateProject(CreateProjectRequest req, Guid creatorId);
     Task<ProjectDto> GetProjectById(Guid projectId);
     Task<List<ProjectDto>> GetAllProjects();
-    Task<ProjectDto> UpdateProject(Guid projectId, UpdateProjectRequest req);
-    Task<bool> RemoveProject(Guid projectId);
-    Task<ProjectDto> AddParticipant(Guid projectId, Guid userId);
-    Task<ProjectDto> RemoveParticipant(Guid projectId, Guid userId);
+    Task<ProjectDto> UpdateProject(Guid projectId, UpdateProjectRequest req, Guid callerId);
+    Task<bool> RemoveProject(Guid projectId, Guid callerId);
+    Task<ProjectDto> AddParticipant(Guid projectId, Guid userId, Guid callerId);
+    Task<ProjectDto> RemoveParticipant(Guid projectId, Guid userId, Guid callerId);
 }
 
 public class ProjectService : IProjectService
@@ -28,7 +28,7 @@ public class ProjectService : IProjectService
         _userRepository = userRepository;
     }
 
-    public async Task<ProjectDto> CreateProject(CreateProjectRequest req)
+    public async Task<ProjectDto> CreateProject(CreateProjectRequest req, Guid creatorId)
     {
         var project = new Project
         {
@@ -36,6 +36,12 @@ public class ProjectService : IProjectService
             Description = req.Description,
             Deadline = req.Deadline
         };
+
+        // The creator is automatically added as a participant. Without this,
+        // nobody - including the creator - would pass the participant check
+        // needed to manage the project they just made.
+        var creator = await _userRepository.GetUserByUserId(creatorId);
+        if (creator != null) project.Participants.Add(creator);
 
         await _projectRepository.AddProject(project);
         return new ProjectDto(project);
@@ -54,10 +60,11 @@ public class ProjectService : IProjectService
         return projects.Select(p => new ProjectDto(p)).ToList();
     }
 
-    public async Task<ProjectDto> UpdateProject(Guid projectId, UpdateProjectRequest req)
+    public async Task<ProjectDto> UpdateProject(Guid projectId, UpdateProjectRequest req, Guid callerId)
     {
         var project = await _projectRepository.GetProjectById(projectId);
         if (project == null) throw new ProjectNotFoundException(projectId);
+        ProjectAuthorization.EnsureParticipant(project, callerId);
 
         if (req.Title != null) project.Title = req.Title;
         if (req.Description != null) project.Description = req.Description;
@@ -68,17 +75,21 @@ public class ProjectService : IProjectService
         return new ProjectDto(project);
     }
 
-    public async Task<bool> RemoveProject(Guid projectId)
-    {
-        var result = await _projectRepository.RemoveProject(projectId);
-        if (!result) throw new ProjectNotFoundException(projectId);
-        return true;
-    }
-
-    public async Task<ProjectDto> AddParticipant(Guid projectId, Guid userId)
+    public async Task<bool> RemoveProject(Guid projectId, Guid callerId)
     {
         var project = await _projectRepository.GetProjectById(projectId);
         if (project == null) throw new ProjectNotFoundException(projectId);
+        ProjectAuthorization.EnsureParticipant(project, callerId);
+
+        await _projectRepository.RemoveProject(projectId);
+        return true;
+    }
+
+    public async Task<ProjectDto> AddParticipant(Guid projectId, Guid userId, Guid callerId)
+    {
+        var project = await _projectRepository.GetProjectById(projectId);
+        if (project == null) throw new ProjectNotFoundException(projectId);
+        ProjectAuthorization.EnsureParticipant(project, callerId);
 
         var user = await _userRepository.GetUserByUserId(userId);
         if (user == null) throw new UserNotFoundException(userId);
@@ -92,10 +103,11 @@ public class ProjectService : IProjectService
         return new ProjectDto(project);
     }
 
-    public async Task<ProjectDto> RemoveParticipant(Guid projectId, Guid userId)
+    public async Task<ProjectDto> RemoveParticipant(Guid projectId, Guid userId, Guid callerId)
     {
         var project = await _projectRepository.GetProjectById(projectId);
         if (project == null) throw new ProjectNotFoundException(projectId);
+        ProjectAuthorization.EnsureParticipant(project, callerId);
 
         var user = await _userRepository.GetUserByUserId(userId);
         if (user == null) throw new UserNotFoundException(userId);

@@ -61,6 +61,15 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(c => c.TicketId);
         });
 
+        // ---- Tag ----
+        // Unique index prevents two concurrent "create this tag" requests from both
+        // succeeding and producing duplicates - see TagRepository.GetOrCreateTag for
+        // the corresponding catch-and-recover on the application side.
+        modelBuilder.Entity<Tag>(entity =>
+        {
+            entity.HasIndex(t => t.Name).IsUnique();
+        });
+
         // ---- Project <-> User (many-to-many, skip navigation) ----
         modelBuilder.Entity<Project>()
             .HasMany(p => p.Participants)
@@ -74,10 +83,6 @@ public class ApplicationDbContext : DbContext
             .UsingEntity(j => j.ToTable("TicketTags"));
 
         // ---- Force every DateTime to UTC on read/write (Npgsql requires timestamptz consistency) ----
-        // Two separate converters are required: EF Core's SetValueConverter requires the converter's
-        // model CLR type to exactly match the property's CLR type, so a single ValueConverter<DateTime, DateTime>
-        // cannot be applied to DateTime? properties (e.g. Project.Deadline, Ticket.Deadline) - doing so throws
-        // an InvalidOperationException at model-build time.
         var utcConverter = new ValueConverter<DateTime, DateTime>(
             v => v.Kind == DateTimeKind.Utc ? v : v.ToUniversalTime(),
             v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
