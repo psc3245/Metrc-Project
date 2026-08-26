@@ -84,10 +84,7 @@ public class TicketService : ITicketService
         var tickets = await _ticketRepository.GetTicketsByProjectId(projectId);
         return tickets.Select(t => new TicketDto(t)).ToList();
     }
-
-    // Loads the ticket's parent project and confirms it exists - this should
-    // never be null given the FK relationship, but we defend against it anyway
-    // rather than assume referential integrity holds.
+    
     private async Task<Project> GetOwningProjectOrThrow(Guid projectId)
     {
         var project = await _projectRepository.GetProjectById(projectId);
@@ -136,9 +133,7 @@ public class TicketService : ITicketService
 
         var assignee = await _userRepository.GetUserByUserId(assigneeId);
         if (assignee == null) throw new UserNotFoundException(assigneeId);
-
-        // The assignee must also belong to the project - you can't hand a ticket
-        // to someone who isn't on the team working on it.
+        
         if (project.Participants.All(p => p.Id != assigneeId))
             throw new ForbiddenException("Assignee must be a participant of the ticket's project.");
 

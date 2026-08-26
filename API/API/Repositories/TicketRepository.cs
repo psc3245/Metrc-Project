@@ -32,9 +32,6 @@ public class TicketRepository : ITicketRepository
 
     public async Task<Ticket?> GetTicketById(Guid ticketId)
     {
-        // Tags and Comments explicitly included: TicketDto reads both collections
-        // directly, and EF Core silently returns an empty list rather than throwing
-        // if they weren't loaded.
         return await _db.Tickets
             .Include(t => t.Tags)
             .Include(t => t.Comments)

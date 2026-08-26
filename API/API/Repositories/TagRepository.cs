@@ -6,8 +6,6 @@ namespace API.Repositories;
 
 public interface ITagRepository
 {
-    // Case-insensitive lookup by name; creates a new Tag with the given color
-    // if none exists yet.
     Task<Tag> GetOrCreateTag(string name, string color);
 }
 
@@ -35,13 +33,10 @@ public class TagRepository : ITagRepository
         }
         catch (DbUpdateException)
         {
-            // Another concurrent request created a tag with this name first and
-            // won the race against the unique index. Detach our failed insert
-            // and return the tag that actually made it in, rather than erroring out.
             _db.Entry(tag).State = EntityState.Detached;
             var winner = await _db.Tags.FirstOrDefaultAsync(t => t.Name.ToLower() == name.ToLower());
             if (winner != null) return winner;
-            throw; // genuinely unexpected - surface the original failure
+            throw;
         }
     }
 }

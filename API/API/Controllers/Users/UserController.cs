@@ -1,4 +1,6 @@
+using API.Entities.Dtos;
 using API.Entities.Exceptions;
+using API.Entities.Users;
 using API.Service;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -17,7 +19,11 @@ public class UserController : ControllerBase
         _service = service;
     }
 
+    /// <summary>Get a user by their id.</summary>
     [HttpGet]
+    [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetUserById([FromQuery] Guid userId)
     {
         try
@@ -31,7 +37,11 @@ public class UserController : ControllerBase
         }
     }
 
+    /// <summary>Get a user by their username.</summary>
     [HttpGet("by-username")]
+    [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetUserByUsername([FromQuery] string username)
     {
         try
@@ -45,13 +55,20 @@ public class UserController : ControllerBase
         }
     }
 
+    /// <summary>Get all users.</summary>
     [HttpGet("all")]
+    [ProducesResponseType(typeof(List<UserDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetAllUsers()
     {
         return Ok(await _service.GetUsers());
     }
 
+    /// <summary>Delete a user by their id.</summary>
     [HttpDelete]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteUser([FromQuery] Guid userId)
     {
         try

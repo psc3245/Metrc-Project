@@ -15,14 +15,10 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
-        // Enums are stored as strings in Postgres (see DbContext HasConversion<string>());
-        // this makes the JSON API consistent with that, accepting/returning "HIGH" /
-        // "IN_PROGRESS" instead of System.Text.Json's default integer representation.
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 builder.Services.AddEndpointsApiExplorer();
@@ -58,9 +54,10 @@ builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<ITicketRepository, TicketRepository>();
 builder.Services.AddScoped<ITagRepository, TagRepository>();
 builder.Services.AddScoped<ITicketService, TicketService>();
+builder.Services.AddScoped<ICommentRepository, CommentRepository>();
+builder.Services.AddScoped<ICommentService, CommentService>();
 builder.Services.AddSingleton<ITokenService, TokenService>();
 
-// ---- JWT Auth ----
 var jwtSection = builder.Configuration.GetSection("Jwt");
 var jwtKey = jwtSection["Key"]
              ?? throw new InvalidOperationException("Jwt:Key is not configured in appsettings.");
@@ -84,7 +81,6 @@ builder.Services.AddAuthentication(options =>
         };
     });
 
-// Every endpoint requires auth by default; controllers/actions opt out with [AllowAnonymous]
 builder.Services.AddAuthorization(options =>
 {
     options.FallbackPolicy = new AuthorizationPolicyBuilder()
@@ -103,6 +99,7 @@ app.UseExceptionHandler(exceptionApp => exceptionApp.Run(async context =>
         UserNotFoundException => (StatusCodes.Status404NotFound, feature.Error.Message),
         ProjectNotFoundException => (StatusCodes.Status404NotFound, feature.Error.Message),
         TicketNotFoundException => (StatusCodes.Status404NotFound, feature.Error.Message),
+        CommentNotFoundException => (StatusCodes.Status404NotFound, feature.Error.Message),
         ForbiddenException => (StatusCodes.Status403Forbidden, feature.Error.Message),
         BadLoginException => (StatusCodes.Status401Unauthorized, feature.Error.Message),
         _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred.")
@@ -113,7 +110,6 @@ app.UseExceptionHandler(exceptionApp => exceptionApp.Run(async context =>
     await context.Response.WriteAsJsonAsync(new { error = message });
 }));
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -129,7 +125,4 @@ app.MapControllers();
 
 app.Run();
 
-// Required for WebApplicationFactory<Program> in integration tests - top-level
-// statement Program classes are implicitly internal, so this makes it accessible
-// from the test project.
 public partial class Program { }

@@ -30,9 +30,6 @@ public class ProjectRepository : IProjectRepository
 
     public async Task<Project?> GetProjectById(Guid projectId)
     {
-        // Participants and Tickets are explicitly included: ProjectDto and
-        // Project.GetStatus() both read these collections, and EF Core silently
-        // returns an empty list rather than throwing if they're not loaded.
         return await _db.Projects
             .Include(p => p.Participants)
             .Include(p => p.Tickets)

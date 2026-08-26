@@ -20,7 +20,6 @@ public class ApplicationDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        // ---- Ticket ----
         modelBuilder.Entity<Ticket>(entity =>
         {
             entity.Property(t => t.Status).HasConversion<string>().HasMaxLength(20);
@@ -29,23 +28,22 @@ public class ApplicationDbContext : DbContext
             entity.HasOne(t => t.Project)
                 .WithMany(p => p.Tickets)
                 .HasForeignKey(t => t.ProjectId)
-                .OnDelete(DeleteBehavior.Cascade); // delete project -> delete its tickets
+                .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasOne(t => t.Assignee)
                 .WithMany(u => u.AssignedTickets)
                 .HasForeignKey(t => t.AssigneeId)
-                .OnDelete(DeleteBehavior.SetNull); // unassign, don't delete ticket
+                .OnDelete(DeleteBehavior.SetNull);
 
             entity.HasOne(t => t.Author)
                 .WithMany(u => u.AuthoredTickets)
                 .HasForeignKey(t => t.AuthorId)
-                .OnDelete(DeleteBehavior.Restrict); // don't let a user delete cascade all their authored tickets
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(t => t.ProjectId);
             entity.HasIndex(t => t.Status);
         });
-
-        // ---- Comment ----
+        
         modelBuilder.Entity<Comment>(entity =>
         {
             entity.HasOne(c => c.Ticket)
@@ -60,29 +58,22 @@ public class ApplicationDbContext : DbContext
 
             entity.HasIndex(c => c.TicketId);
         });
-
-        // ---- Tag ----
-        // Unique index prevents two concurrent "create this tag" requests from both
-        // succeeding and producing duplicates - see TagRepository.GetOrCreateTag for
-        // the corresponding catch-and-recover on the application side.
+        
         modelBuilder.Entity<Tag>(entity =>
         {
             entity.HasIndex(t => t.Name).IsUnique();
         });
-
-        // ---- Project <-> User (many-to-many, skip navigation) ----
+        
         modelBuilder.Entity<Project>()
             .HasMany(p => p.Participants)
             .WithMany(u => u.Projects)
             .UsingEntity(j => j.ToTable("ProjectParticipants"));
-
-        // ---- Ticket <-> Tag (many-to-many, skip navigation) ----
+        
         modelBuilder.Entity<Ticket>()
             .HasMany(t => t.Tags)
             .WithMany(tag => tag.Tickets)
             .UsingEntity(j => j.ToTable("TicketTags"));
-
-        // ---- Force every DateTime to UTC on read/write (Npgsql requires timestamptz consistency) ----
+        
         var utcConverter = new ValueConverter<DateTime, DateTime>(
             v => v.Kind == DateTimeKind.Utc ? v : v.ToUniversalTime(),
             v => DateTime.SpecifyKind(v, DateTimeKind.Utc));

@@ -36,10 +36,7 @@ public class ProjectService : IProjectService
             Description = req.Description,
             Deadline = req.Deadline
         };
-
-        // The creator is automatically added as a participant. Without this,
-        // nobody - including the creator - would pass the participant check
-        // needed to manage the project they just made.
+        
         var creator = await _userRepository.GetUserByUserId(creatorId);
         if (creator != null) project.Participants.Add(creator);
 
